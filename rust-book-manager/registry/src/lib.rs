@@ -1,14 +1,26 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use std::sync::Arc;
+
+use adapter::{database::ConnectionPool, repository::health::HealthCheckRepositoryImpl};
+use kernel::repository::health::HealthCheckRepository;
+
+// 1) DIコンテナの役割を果たす構造体を定義する。Cloneはのちほどaxum側で必要になるため
+#[derive(Clone)]
+pub struct AppRegistry {
+    health_check_repository: Arc<dyn HealthCheckRepository>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl AppRegistry {
+    pub fn new(pool: ConnectionPool) -> Self {
+        // 2) 依存解決を行う。関数内で手書きする。
+        let health_check_repository = Arc::new(HealthCheckRepositoryImpl::new(pool.clone()));
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+        Self {
+            health_check_repository,
+        }
+    }
+
+    // 3) 依存解決したインスタンスを返すメソッドを定義する
+    pub fn health_check_repository(&self) -> Arc<dyn HealthCheckRepository> {
+        self.health_check_repository.clone()
     }
 }

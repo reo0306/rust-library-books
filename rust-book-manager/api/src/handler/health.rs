@@ -1,24 +1,16 @@
-use async_trait::async_trait;
-use derive_new::new;
-use kernel::repository::health::HealthCheckRepository;
+use axum::{extract::State, http::StatusCode};
+use registry::AppRegistry;
 
-use crate::database::ConnectionPool;
-
-// 1) コンストラクトを生成する
-#[derive(new)]
-pub struct HealthCheckRepositoryImpl {
-    // 2) 構造体にConnectionPoolをもたせる。
-    db: ConnectionPool,
+pub async fn health_check() -> StatusCode {
+    StatusCode::OK
 }
 
-#[async_trait]
-// 3) HealthCheckRepositoryを実装する
-impl HealthCheckRepository for HealthCheckRepositoryImpl {
-    async fn check_db(&self) -> bool {
-        // 4) クエリ実行結果はResult型であるため、OKならtrue, Errならfalseを返される
-        sqlx::query("SELECT 1")
-            .fetch_one(self.db.inner_ref())
-            .await
-            .is_ok()
+// 1) Stateに登録されているAppRegistryを取り出す
+pub async fn health_check_db(State(registry): State<AppRegistry>) -> StatusCode {
+    // 2) health_check_registoryメソッドを経由してリポジトリの処理を呼び出せる
+    if registry.health_check_repository().check_db().await {
+        StatusCode::OK
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR
     }
 }

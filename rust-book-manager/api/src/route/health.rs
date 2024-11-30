@@ -1,24 +1,13 @@
-use async_trait::async_trait;
-use derive_new::new;
-use kernel::repository::health::HealthCheckRepository;
+use axum::{routing::get, Router};
+use registry::AppRegistry;
 
-use crate::database::ConnectionPool;
+use crate::handler::health::{health_check, health_check_db};
 
-// 1) コンストラクトを生成する
-#[derive(new)]
-pub struct HealthCheckRepositoryImpl {
-    // 2) 構造体にConnectionPoolをもたせる。
-    db: ConnectionPool,
-}
-
-#[async_trait]
-// 3) HealthCheckRepositoryを実装する
-impl HealthCheckRepository for HealthCheckRepositoryImpl {
-    async fn check_db(&self) -> bool {
-        // 4) クエリ実行結果はResult型であるため、OKならtrue, Errならfalseを返される
-        sqlx::query("SELECT 1")
-            .fetch_one(self.db.inner_ref())
-            .await
-            .is_ok()
-    }
+// 1) RouteのStateがAppResitryとなるため、Routerの型引数を指定する
+pub fn build_healtth_check_routers() -> Router<AppRegistry> {
+    // 2) ヘルスチェックに関連するパスのルートである/healthに個別のパスをネストする
+    let routers = Router::new()
+        .route("/", get(health_check))
+        .route("/db", get(health_check_db));
+    Router::new().nest("/health", routers)
 }

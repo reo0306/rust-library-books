@@ -1,14 +1,14 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use derive_new::new;
-use kernel::model::book:{eventt::CreateBook, Book};
-use kernel::repository::book:BookRepository;
+use kernel::model::book::{event::CreateBook, Book};
+use kernel::repository::book::BookRepository;
 use uuid::Uuid;
 
 use crate::database::ConnectionPool;
-use crate::database::model::book:BookRow;
+use crate::database::model::book::BookRow;
 
-#[derive_new]
+#[derive(new)]
 pub struct BookRepositoryImpl {
     db: ConnectionPool,
 }
@@ -47,7 +47,7 @@ impl BookRepository for BookRepositoryImpl {
             "#
         )
         .fetch_all(self.db.inner_ref())
-        await?;
+        .await?;
 
         Ok(rows.into_iter().map(Book::from).collect())
     }
@@ -69,7 +69,54 @@ impl BookRepository for BookRepositoryImpl {
         )
         .fetch_optional(self.db.inner_ref())
         .await?;
-    }
 
-    Ok(row.map(Book::from))
+        Ok(row.map(Book::from))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[sqlx::test]
+    async fn test_register_book(pool: sqlx::PgPool) -> anyhow ::Result<()> {
+        // BookRepostioryImplを初期化
+        let repo = BookRepositoryImpl::new(ConnectionPool::new(pool));
+
+        // 投入するための蔵書データを作成
+        let book = CreateBook {
+            title: "Test Title".into(),
+            author: "Test Author".into(),
+            isbn: "Test ISBN".into(),
+            description: "Test Description".into(),
+        };
+
+        // 蔵書データを投入すると正常終了することを確認
+        repo.create(book).await?;
+
+        // 蔵書の一覧を取得すると投入した1件だけ取得できることを確認
+        let res = repo.find_all().await?;
+        assert_eq!(res.len(), 1);
+
+        // 蔵書の一覧の最初のデータから蔵書IDを取得し、find_by_idメソッドでその蔵書データを取得することができることを確認
+        let book_id = res[0].id;
+        let res = repo.find_by_id(book_id).await?;
+        assert!(res.is_some());
+
+        // 取得した蔵書データがCreateBookで投入した蔵書データと一致することを確認
+        let Book {
+            id,
+            title,
+            author,
+            isbn,
+            description,
+        } = res.unwrap();
+        assert_eq!(id, book_id);
+        assert_eq!(title, "Test Title");
+        assert_eq!(author, "Test Author");
+        assert_eq!(isbn, "Test ISBN");
+        assert_eq!(description, "Test Description");
+
+        Ok(())
+    }
 }

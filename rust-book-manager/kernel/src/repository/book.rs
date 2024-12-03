@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::model::book::{event::CreateBook Book};
+use crate::model::book::{event::CreateBook, Book};
 
 #[async_trait]
 pub trait BookRepository: Send + Sync {

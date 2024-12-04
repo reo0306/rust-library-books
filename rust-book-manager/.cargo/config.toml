@@ -1,0 +1,2 @@
+[env]
+DATABASE_URL = "postgresql://libray-app:password@localhost:5432/libray-app"

@@ -70,7 +70,7 @@ impl BookRepository for BookRepositoryImpl {
                 FROM books
                 WHERE book_id = $1
             "#,
-            book_id
+            book_id as _ // query_as!マクロによるコンパイル時の型チェックを無効化
         )
         .fetch_optional(self.db.inner_ref())
         .await

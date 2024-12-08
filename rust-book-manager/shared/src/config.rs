@@ -25,3 +25,8 @@ pub struct DatabaseConfig {
     pub password: String,
     pub database: String,
 }
+
+pub struct RedisConfig {
+    pub host: String,
+    pub port: u16,
+}

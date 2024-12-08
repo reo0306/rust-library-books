@@ -22,8 +22,10 @@ pub enum AppError {
     #[error("{0}")]
     ConvertToUuidError(#[from] uuid::Error),
     #[error("ログインに失敗しました")]
-    UnauthorizedError,
+    UnauthenticatedError,
     #[error("認可情報が誤ってます")]
+    UnauthorizedError,
+    #[error("許可されていない操作です")]
     ForbiddenOperation,
     #[error("{0}")]
     ConversionEntityError(String),
@@ -34,10 +36,8 @@ impl IntoResponse for AppError {
         let status_code = match self {
             AppError::UnprocessableEntity(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::EntityNotFound(_) => StatusCode::NOT_FOUND,
-            AppError::ValidationError(_) | AppError::ConvertToUuidError(_) => {
-                StatusCode::BAD_REQUEST
-            }
-            AppError::UnauthorizedError | AppError::ForbiddenOperation => StatusCode::FORBIDDEN,
+            AppError::ValidationError(_) | AppError::ConvertToUuidError(_) => StatusCode::BAD_REQUEST,
+            AppError::UnauthenticatedError | AppError::ForbiddenOperation => StatusCode::FORBIDDEN,
             AppError::UnauthorizedError => StatusCode::UNAUTHORIZED,
             e @ (AppError::TransactionError(_)
             | AppError::SpecificOperationError(_)

@@ -2,15 +2,9 @@ use std::sync::Arc;
 
 use adapter::{
     database::ConnectionPool,
-    repository::{
-        book::BookRepositoryImpl,
-        health::HealthCheckRepositoryImpl,
-    }
+    repository::{book::BookRepositoryImpl, health::HealthCheckRepositoryImpl},
 };
-use kernel::repository::{
-    health::HealthCheckRepository,
-    book::BookRepository,
-};
+use kernel::repository::{book::BookRepository, health::HealthCheckRepository};
 
 // 1) DIコンテナの役割を果たす構造体を定義する。Cloneはのちほどaxum側で必要になるため
 #[derive(Clone)]

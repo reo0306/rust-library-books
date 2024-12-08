@@ -8,7 +8,7 @@ pub enum AppError {
     #[error("{0}")]
     EntityNotFound(String),
     #[error("{0}")]
-    ValidationError(#[from] grade::Report),
+    ValidationError(#[from] garde::Report),
     #[error("トランザクションを実行できませんでした。")]
     TransactionError(#[source] sqlx::Error),
     #[error("データベース処理実行中にエラーが発生しました。")]
@@ -16,13 +16,13 @@ pub enum AppError {
     #[error("No rows affected: {0}")]
     NoRowsAffectedError(String),
     #[error("{0}")]
-    KeyValuesStoreError(#[from] redis::Redis::Error),
+    KeyValuesStoreError(#[from] redis::RedisError),
     #[error("{0}")]
-    BcryptError(#[from] bcypt::BcryptError),
+    BcryptError(#[from] bcrypt::BcryptError),
     #[error("{0}")]
     ConvertToUuidError(#[from] uuid::Error),
     #[error("ログインに失敗しました")]
-    UnauthenticatedError,
+    UnauthorizedError,
     #[error("認可情報が誤ってます")]
     ForbiddenOperation,
     #[error("{0}")]
@@ -31,32 +31,29 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
-        let status_code =
-            match self {
-                AppError::UnprocessableEntity(_) => {
-                    StatusCode::UNPROCESSABLE_ENTITY
-                }
-                AppError::EntityNotFound(_) => StatusCode::NOT_FOUND,
-                AppError::ValidationError(_)
-                | AppError::ConversionEntityError(_) => StatusCode::BAD_REQUEST,
-                AppError::UnauthenticatedError
-                | AppError::ForbiddenOperation => StatusCode::FORBIDDEN,
-                AppError::UnauthenticatedError => StatusCode::UNAUTRRHORIZED,
-                e @ (AppError::TransactionError()
-                | AppError::SpecificOperationError(_)
-                | AppError::NoRowsAffectedError(_)
-                | AppError::KeyValuesStoreError(_)
-                | AppError::BcryptError(_)
-                | AppError::ConversionEntityError(_)) => {
-                    tracing::error!(
-                        errorr.cause_chain = ?e,
-                        error.message = %e,
-                        "Unexpected error happened"
-                    );
-                    StatusCode::INTERNAL_SERVERR_ERROR
-                }
-            };
-        
+        let status_code = match self {
+            AppError::UnprocessableEntity(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            AppError::EntityNotFound(_) => StatusCode::NOT_FOUND,
+            AppError::ValidationError(_) | AppError::ConvertToUuidError(_) => {
+                StatusCode::BAD_REQUEST
+            }
+            AppError::UnauthorizedError | AppError::ForbiddenOperation => StatusCode::FORBIDDEN,
+            AppError::UnauthorizedError => StatusCode::UNAUTHORIZED,
+            e @ (AppError::TransactionError(_)
+            | AppError::SpecificOperationError(_)
+            | AppError::NoRowsAffectedError(_)
+            | AppError::KeyValuesStoreError(_)
+            | AppError::BcryptError(_)
+            | AppError::ConversionEntityError(_)) => {
+                tracing::error!(
+                    errorr.cause_chain = ?e,
+                    error.message = %e,
+                    "Unexpected error happened"
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        };
+
         status_code.into_response()
     }
 }

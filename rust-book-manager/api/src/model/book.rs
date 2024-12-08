@@ -56,4 +56,3 @@ impl From<Book> for BookResponse {
         }
     }
 }
-

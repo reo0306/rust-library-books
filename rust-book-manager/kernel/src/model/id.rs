@@ -6,7 +6,7 @@ macro_rules! define_id {
     ($id_type: ident) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, sqlx::Type)]
         #[serde(into = "String")]
-        #[sqlx(transparsent)]
+        #[sqlx(transparent)]
         pub struct $id_type(uuid::Uuid);
 
         impl $id_type {
@@ -28,7 +28,7 @@ macro_rules! define_id {
         impl FromStr for $id_type {
             type Err = AppError;
 
-            fn from_str(s: &str) ->Result<Self, Self::Err> {
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
                 Ok(Self(uuid::Uuid::parse_str(s)?))
             }
         }
@@ -41,7 +41,13 @@ macro_rules! define_id {
 
         impl std::fmt::Display for $id_type {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0.as_simple().encode_lower(&mut uuid::Uuid::encode_buffer()))
+                write!(
+                    f,
+                    "{}",
+                    self.0
+                        .as_simple()
+                        .encode_lower(&mut uuid::Uuid::encode_buffer())
+                )
             }
         }
 
@@ -53,6 +59,6 @@ macro_rules! define_id {
     };
 }
 
-defind_id!(UserId);
-defind_id!(BookId);
-defind_id!(CheckoutId);
+define_id!(UserId);
+define_id!(BookId);
+define_id!(CheckoutId);

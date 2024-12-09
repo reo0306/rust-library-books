@@ -1,5 +1,5 @@
 use shared::error::{AppError, AppResult};
-use std::error::FromStr;
+use std::str::FromStr;
 
 use kernel::model::{
     auth::{event::CreateToken, AccessToken},
@@ -24,7 +24,7 @@ pub fn from(event: CreateToken) -> (AuthorizationKey, AuthorizedUserId) {
 }
 
 impl From<AuthorizationKey> for AccessToken {
-    fn from(token: AccessToken) -> Self {
+    fn from(token: AuthorizationKey) -> Self {
         Self(token.0)
     }
 }
@@ -42,7 +42,7 @@ impl From<&AccessToken> for AuthorizationKey {
 }
 
 impl RedisKey for AuthorizationKey {
-    type value = AuthorizedUserId;
+    type Value = AuthorizedUserId;
 
     fn inner(&self) -> String {
         self.0.clone()

@@ -12,7 +12,7 @@ use kernel::{
 use shared::error::{AppError, AppResult};
 
 use crate::{
-    daatbase::{
+    database::{
         model::auth::{from, AuthorizationKey, AuthorizedUserId, UserItem},
         ConnectionPool,
     },

@@ -1,8 +1,11 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 
-use adapter::database::connect_database_with;
+use adapter::{database::connect_database_with, redis::RedisClient};
 use anyhow::{Context, Error, Result};
-use api::route::{book::build_book_routers, health::build_healtth_check_routers};
+use api::route::{auth, book::build_book_routers, health::build_healtth_check_routers};
 use axum::Router;
 use registry::AppRegistry;
 use shared::{
@@ -42,7 +45,7 @@ fn init_logger() -> Result<()> {
     tracing_subscriber::registry()
         .with(subscriber)
         .with(env_filter)
-        .try_into()?;
+        .try_init()?;
 
     Ok(())
 }
@@ -53,15 +56,15 @@ async fn bootstrap() -> Result<()> {
     let app_config = AppConfig::new()?;
     // 3) データベースへの接続を行う。コネクションプールを取り出しておく
     let pool = connect_database_with(&app_config.database);
-
+    // Redisへの接続を行うクライアントのインスタンスを作成する。
+    let kv = Arc::new(RedisClient::new(&app_config.redis)?);
     // 4) AppResitryを生成する
-    let registry = AppRegistry::new(pool);
+    let registry = AppRegistry::new(pool, kv, app_config);
 
     // 5) build_health_check_routers関数を呼び出す。AppRegistryをRouterに登録しておく
     let app = Router::new()
         .merge(build_healtth_check_routers())
         .merge(build_book_routers())
-        .merge(v1::routes())
         .merge(auth::routes())
         // 以下に、リクエストとレスポンス時にログを出力するレイヤーを追加する
         .layer(

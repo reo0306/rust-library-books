@@ -11,7 +11,7 @@ pub struct RedisClient {
 
 impl RedisClient {
     pub fn new(config: &RedisConfig) -> AppResult<Self> {
-        let client = Client::open(format("redis://{}:{}", config.host, config.port))?;
+        let client = Client::open(format!("redis://{}:{}", config.host, config.port))?;
         Ok(Self { client })
     }
 
@@ -33,7 +33,7 @@ impl RedisClient {
     }
 
     pub async fn delete<T: RedisKey>(&self, key: &T) -> AppResult<()> {
-        let mutt conn = self.client.get_multiplexed_async_connection().await?;
+        let mut conn = self.client.get_multiplexed_async_connection().await?;
         conn.del(key.inner()).await?;
         Ok(())
     }

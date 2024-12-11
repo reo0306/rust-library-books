@@ -1,9 +1,10 @@
 use axum::extract::FromRequestParts;
-use axum::htttp::request::Parts;
+use axum::http::request::Parts;
 use axum::{async_trait, RequestPartsExt};
-use axum_extra::headers::authorization::Bearer;
-use axum_extra::headers::Authorization;
-use axum_extra::TypeHeader;
+use axum_extra::{
+    TypedHeader,
+    headers::{authorization::Bearer, Authorization,},
+};
 use kernel::model::{
     auth::AccessToken,
     id::UserId,
@@ -40,8 +41,8 @@ impl FromRequestParts<AppRegistry> for AuthorizedUser {
         registry: &AppRegistry,
     ) -> Result<Self, Self::Rejection> {
         // b) HTTPヘッダからアクセストークンを取り出す。
-        let TypeHeader(Authorization(bearer)) = parts
-            .extract::<TypeHeader<Authorization<Bearer>>>()
+        let TypedHeader(Authorization(bearer)) = parts
+            .extract::<TypedHeader<Authorization<Bearer>>>()
             .await
             .map_err(|_| AppError::UnauthorizedError)?;
 
@@ -54,7 +55,7 @@ impl FromRequestParts<AppRegistry> for AuthorizedUser {
             .await?
             .ok_or(AppError::UnauthenticatedError)?;
 
-        let user = Registry
+        let user = registry
             .user_repository()
             .find_current_user(user_id)
             .await?

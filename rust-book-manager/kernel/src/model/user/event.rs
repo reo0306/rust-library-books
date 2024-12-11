@@ -9,7 +9,7 @@ pub struct CreateUser {
 
 #[derive(Debug)]
 pub struct UpdateUserRole {
-    pub user_id UserId,
+    pub user_id: UserId,
     pub role: Role,
 }
 

@@ -69,7 +69,7 @@ impl UserRepository for UserRepositoryImpl {
         )
         .fetch_all(self.db.inner_ref())
         .await
-        .map_err(AppError::SpecificOperationError)?;
+        .map_err(AppError::SpecificOperationError)?
         .into_iter()
         .filter_map(|row| User::try_from(row).ok())
         .collect();
@@ -79,14 +79,14 @@ impl UserRepository for UserRepositoryImpl {
 
     async fn create(&self, event: CreateUser) -> AppResult<User> {
         let user_id = UserId::new();
-        let hashed_password = hashed_password(&event.password)?;
+        let hashed_password = hash_password(&event.password)?;
         // ユーザーを追加するときは管理者ではなく、逸pなんのユーザー権限とする。
         let role = Role::User;
 
         let res = sqlx::query!(
             r#"
                 INSERT INTO users(user_id, name, email, password_hash, role_id)
-                SELECT $1, $2, $3, $4, rorle_id FROM roles WHERE name = $5;
+                SELECT $1, $2, $3, $4, role_id FROM roles WHERE name = $5;
             "#,
             user_id as _,
             event.name,
@@ -133,12 +133,12 @@ impl UserRepository for UserRepositoryImpl {
         let new_password_hash = hash_password(&event.new_password)?;
         sqlx::query!(
             r#"
-                UPDARTE users SET password_hash = $2 WHERE user_id = $1;
-            "#
+                UPDATE users SET password_hash = $2 WHERE user_id = $1;
+            "#,
             event.user_id as _,
             new_password_hash,
         )
-        execute(&mutt *tx)
+        .execute(&mut *tx)
         .await
         .map_err(AppError::SpecificOperationError)?;
 
@@ -150,15 +150,15 @@ impl UserRepository for UserRepositoryImpl {
     async fn update_role(&self, event: UpdateUserRole) -> AppResult<()> {
         let res = sqlx::query!(
             r#"
-                UPDARTE users SET role_id = (
+                UPDATE users SET role_id = (
                     SELECT role_id FROM roles WHERE name = $2
                 )
                 WHERE user_id = $1
-            "#
+            "#,
             event.user_id as _,
             event.role.as_ref(),
         )
-        execute(self.db.inner_ref())
+        .execute(self.db.inner_ref())
         .await
         .map_err(AppError::SpecificOperationError)?;
 
@@ -174,11 +174,11 @@ impl UserRepository for UserRepositoryImpl {
     async fn delete(&self, event: DeleteUser) -> AppResult<()> {
         let res = sqlx::query!(
             r#"
-                DELET FROM users WHERE user_id = $1
-            "#
+                DELETE FROM users WHERE user_id = $1
+            "#,
             event.user_id as _
         )
-        execute(self.db.inner_ref())
+        .execute(self.db.inner_ref())
         .await
         .map_err(AppError::SpecificOperationError)?;
 

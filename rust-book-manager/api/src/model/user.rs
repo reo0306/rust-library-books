@@ -5,7 +5,7 @@ use kernel::model::{
     role::Role,
     user::{
         event::{CreateUser, UpdateUserPassword, UpdateUserRole},
-        Userr,
+        User,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -39,7 +39,7 @@ impl From<RoleName> for Role {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsersResponse {
-    pub items: Vec<UsersResponse>,
+    pub items: Vec<UserResponse>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -68,7 +68,7 @@ impl From<User> for UserResponse {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateUserPasswordRequest {
     #[garde(length(min = 1))]
@@ -78,13 +78,13 @@ pub struct UpdateUserPasswordRequest {
 }
 
 #[derive(new)]
-pub struct UpdateUserPasswordRequestWithUserId {
+pub struct UpdateUserPasswordRequestWithUserId(
     UserId,
     UpdateUserPasswordRequest,
-}
+);
 
 impl From<UpdateUserPasswordRequestWithUserId> for UpdateUserPassword {
-    fn from<value: UpdateUserPasswordRequestWithUserId> -> Self {
+    fn from(value: UpdateUserPasswordRequestWithUserId) -> Self {
         let UpdateUserPasswordRequestWithUserId(
             user_id,
             UpdateUserPasswordRequest {
@@ -100,19 +100,19 @@ impl From<UpdateUserPasswordRequestWithUserId> for UpdateUserPassword {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateUserRequest {
     #[garde(length(min = 1))]
     name: String,
-    #[garde(email))]
+    #[garde(email)]
     email: String,
     #[garde(length(min = 1))]
     password: String,
 }
 
 impl From<CreateUserRequest> for CreateUser {
-    fn from<value: CreateUserRequest> -> Self {
+    fn from(value: CreateUserRequest) -> Self {
         let CreateUserRequest {
             name,
             email,
@@ -135,7 +135,7 @@ pub struct UpdateUserRoleRequest {
 #[derive(new)]
 pub struct UpdateUserRoleRequestWithUserId(UserId, UpdateUserRoleRequest);
 
-imp From<UpdateUserRoleRequestWithUserId> for UpdateUserRole {
+impl From<UpdateUserRoleRequestWithUserId> for UpdateUserRole {
     fn from(value: UpdateUserRoleRequestWithUserId) -> Self {
         let UpdateUserRoleRequestWithUserId(
             user_id,

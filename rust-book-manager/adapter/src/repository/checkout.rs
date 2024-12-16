@@ -2,254 +2,331 @@ use async_trait::async_trait;
 use derive_new::new;
 use kernel::{
     model::{
-        id::{BookId, UserId},
-        book::{
-            event::{CreateBook, UpdateBook, DeleteBook},
-            Book, BookListOptions,
+        id::{BookId, CheckoutId, UserId},
+        checkout::{
+            event::{CreateCheckout, UpdateReturned},
+            Checkout,
         },
-        list::PaginatedList,
     },
-    repository::book::BookRepository,
+    repository::checkout::CheckoutRepository,
 };
 use shared::error::{AppError, AppResult};
 
-use crate::database::model::book::{BookRow, PaginatedBookRow};
-use crate::database::ConnectionPool;
+use crate::database::{
+    model::checkout::{CheckoutRow, CheckoutStateRow, ReturnedCheckoutRow};
+    ConnectionPool,
+};
 
 #[derive(new)]
-pub struct BookRepositoryImpl {
+pub struct CheckoutRepositoryImpl {
     db: ConnectionPool,
 }
 
 #[async_trait]
-impl BookRepository for BookRepositoryImpl {
-    async fn create(&self, event: CreateBook, user_id: UserId) -> AppResult<()> {
-        sqlx::query!(
+impl CheckoutRepository for CheckoutRepositoryImpl {
+    // 貸出操作を行う
+    async fn create(&self, event: CreateCheckout) -> AppResult<()> {
+        let mut tx = self.db.begin().await?;
+
+        // トランザクション分離レベルをSERIALIZABLEに設定する。
+        self.set_transaction_serializable(&mut tx).await?;
+
+        // 事前のチェックとして、以下を調べる
+        // - 指定の蔵書IDを蔵書が存在するか
+        // - 存在した場合、この蔵書は貸出中ではないか
+        //
+        // 上記の両方がYesだった場合、このブロック以降の処理に進む
+        {
+            let res = sqlx::query_as!(
+                CheckoutStateRow,
+                r#"
+                    SELECT
+                        b.book_id,
+                        c.checkout_id AS "checkout_id?: CheckoutId",
+                        NULL AS "user_id?: UserId",
+                    FROM
+                        books AS b
+                    LEFT OUTER JOIN
+                        checkouts AS c
+                    USING (book_id)
+                    WHERE
+                        book_id = $1;
+                "#,
+                event.book_id as _
+            )
+            .fetch_optional(&mu *tx)
+            .await
+            map_err(AppError::SpecificOperationError)?;
+
+            match res {
+                // 指定した書籍が存在しない場合
+                None => {
+                    return Err(AppError::EntityNotFound(format!(
+                        "書籍({})が見つかりませんでした。",
+                        event.book_id
+                    )))
+                }
+                // 指定した書籍が存在するが貸出中の場合
+                Some(CheckoutStateRow {
+                    checkout_id: Some(_),
+                    ..
+                }) => {
+                    return Err(AppError::UnprocessableEntity(format!(
+                        "書籍({})に対する貸出がすでに存在します。",
+                        event.book_id
+                    )))
+                }
+                _ => {} // それ以外は処理続行
+            }
+        }
+
+        // 貸出処理を行う、すなわちcheckoutsテーブルにレコードを行う
+        let checkout_id = CheckoutId::new();
+        let res = sqlx::query!(
             r#"
-                INSERT INTO books (title, author, isbn, description, user_id) VALUES($1, $2, $3, $4, $5)
+                INSERT INTO checkouts (checkout_id, book_id, user_id, checked_out_at) VALUES ($1, $2, $3, $4);
             "#,
-            event.title,
-            event.author,
-            event.isbn,
-            event.description,
+            checkout_id as _,
+            event.book_id as _,
+            event.checked_out_by as _,
+            event.checked_out_at,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::SpecificOperationError)?;
+
+        if res.rows_affected() < 1 {
+            return Err(AppError::NoRowsAffectedError(
+                "No checkout record has been created".into(),
+            ));
+        }
+
+        tx.commit().await.map_err(AppError::TransactionError)?;
+
+        Ok(())
+    }
+
+    // 返却操作を行う
+    async fn update_returned(&self, options: UpdateReturned) -> AppResult<()> {
+        let mut tx = self.db.begin().await?;
+
+        // トランザクション分離レベルをSERIALIZABLEに設定する。
+        self.set_transaction_serializable(&mut tx).await?;
+
+        // 返却操作は事前のチェックとして、以下を調べる
+        // - 指定の蔵書IDを蔵書が存在するか
+        // - 存在した場合
+        //   - この蔵書は貸出中であり
+        //   - かつ、借りたユーザーが指定のユーザーと同じか
+        //
+        // 上記の両方がYesだった場合、このブロック以降の処理に進む
+        // なお、ブロックの仕様は意図的である。こうすることで
+        // res変数がシャドーイングで上書きされるのを防ぐなどのメリットがある
+        {
+            let res = sqlx::query_as!(
+                CheckoutStateRow,
+                r#"
+                    SELECT
+                        b.book_id,
+                        c.checkout_id AS "checkout_id?: CheckoutId",
+                        c.user_id AS "user_id?: UserId"
+                    FROM
+                        books AS b
+                    LEFT OUTER JOIN
+                        checkouts AS c
+                    USING (book_id)
+                    WHERE
+                        book_id = $1;
+                "#,
+                event.book_id as _
+            )
+            .fetch_optional(&mu *tx)
+            .await
+            map_err(AppError::SpecificOperationError)?;
+
+            match res {
+                // 指定した書籍がそもそも存在しない場合
+                None => {
+                    return Err(AppError::EntityNotFound(format!(
+                        "書籍({})が見つかりませんでした。",
+                        event.book_id
+                    )))
+                }
+                // 指定した書籍が貸出中であり、貸出IDまたは借りたユーザーが異なる場合
+                Some(CheckoutStateRow {
+                    checkout_id: Some(c),
+                    user_id: Some(u)
+                    ..
+                }) if (c, u) != (event.checkout_id, event.returned_by) => {
+                    return Err(AppError::UnprocessableEntity(format!(
+                        "指定の貸出(ID({}), ユーザー({})、書籍({})は返却できません。",
+                        event.checkout_id,
+                        event.returned_by,
+                        event.book_id
+                    )))
+                }
+                _ => {} // それ以外は処理続行
+            }
+        }
+
+        // データベース上の返却操作として、
+        // checkoutsテーブルにある該当貸出IDのレコードを、
+        // returned_atを追加して、returned_checkoutsテーブルにINSERTする。
+        let res = sqlx::query!(
+            r#"
+                INSERT INTO returned_checkouts
+                (checkout_id, book_id, user_id, checked_out_at, returned_at)
+                SELECT checkout_id, book_id, user_id, checked_out_at, $2
+                FROM checkouts
+                WHERE checkout_id = $1;
+            "#,
+            event.checkout_id as _,
+            event.returned_at,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::SpecificOperationError)?;
+
+        if res.rows_affected() < 1 {
+            return Err(AppError::NoRowsAffectedError(
+                "No returning record has been updated".into(),
+            ));
+        }
+
+        // 上記処理が成功したら、checkoutsテーブルから該当貸出IDのレコードを削除する
+        let res = sqlx::query!(
+            r#"
+                DELETE FROM checkouts WHERE checkout_id = $1;
+            "#,
+            event.checkout_id as _,
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(AppError::SpecificOperationError)?;
+
+        if res.rows_affected() < 1 {
+            return Err(AppError::NoRowsAffectedError(
+                "No returning record has been updated".into(),
+            ));
+        }
+
+        tx.commit().await.map_err(AppError::TransactionError)?;
+
+        Ok(())
+    }
+
+    // すべての未返却の貸出情報を取得する。
+    async fn find_unreturned_all(&self) -> AppResult<Vec<Checkout>> {
+        // checkoutsテーブルにあるレコードを全件抽出する。
+        // booksテーブルとINNER JOINし、蔵書の情報も一緒に抽出する。
+        // 出力するレコードは、貸出日の古い順に並べる。
+        sqlx::query_as!(
+            CheckoutRow,
+            r#"
+                SELECT
+                    c.checkout_id,
+                    c.book_id,
+                    c.user_id,
+                    c.checked_out_id,
+                    b.titile,
+                    b.author,
+                    b.isbn
+                FROM
+                    checkouts AS c
+                INNER JOIN
+                    books AS b
+                USING (book_id)
+                ORDER BY c.checked_out_at ASC;
+            "#,
+        )
+        .fetch_all(self.db.inner_ref())
+        .await
+        .map(|rows| rows.into_iter().map(Checkout::from).collect())
+        .map_err(AppError::SpecificOperationError)
+    }
+
+    // ユーザーIDに紐づく未返却の貸出情報を取得する。
+    async fn find_unreturned_by_user_id(&self, user_id: UserId) -> AppResult<Vec<Checkout>> {
+        // find_unreturned_allのSQLにユーザーIDで絞り込むWHERE句を追加したものである。
+        sqlx::query_as!(
+            CheckoutRow,
+            r#"
+                SELECT
+                    c.checkout_id,
+                    c.book_id,
+                    c.user_id,
+                    c.checked_out_id,
+                    b.titile,
+                    b.author,
+                    b.isbn
+                FROM
+                    checkouts AS c
+                INNER JOIN
+                    books AS b
+                USING (book_id)
+                WHERE
+                    c.user_id = $1
+                ORDER BY c.checked_out_at ASC;
+            "#,
             user_id as _
         )
-        .execute(self.db.inner_ref())
-        .await
-        // sqlx::Error型をAppError型に変換
-        .map_err(AppError::SpecificOperationError)?;
-
-        Ok(())
-    }
-
-    async fn find_all(&self, options: BookListOptions) -> AppResult<PaginatedList<Book>> {
-        let BookListOptions { limit, offset } = options;
-
-        let rows: Vec<PaginatedBookRow> = sqlx::query_as!(
-            PaginatedBookRow,
-            r#"
-                SELECT
-                    COUNT(*) OVER() AS "total!",
-                    b.book_id AS id
-                FROM
-                    books AS b
-                ORDER BY b.created_at DESC
-                LIMIT $1
-                OFFSET $2
-            "#,
-            limit,
-            offset
-        )
         .fetch_all(self.db.inner_ref())
         .await
-        .map_err(AppError::SpecificOperationError)?;
+        .map(|rows| rows.into_iter().map(Checkout::from).collect())
+        .map_err(AppError::SpecificOperationError)
+    }
 
-        let total = rows.first().map(|r| r.total).unwrap_or_default();
-        let book_ids = rows.into_iter().map(|r| r.id).collect::<Vec<BookId>>();
+    // 蔵書の貸出履歴（返却済みも含む）を取得する。
+    async fn find_history_by_book_id(&self, book_id: BookId) -> AppResult<Vec<Checkout>> {
+        // このメソッドでは、貸出中・返却済みの両方を取得して、蔵書に対する貸出履歴の一覧を返す必要がある
+        // そのため、未返却の貸出情報と返却済みの貸出情報をそれぞれ取得し、
+        // 未返却の貸出情報があればVecに挿入して返す、という実装にする
 
-        let rows: Vec<BookRow> = sqlx::query_as!(
-            BookRow,
+        // 未返却の貸出情報を取得
+        let checkout: Option<Checkout> = self.find_unreturned_by_book_id(book_id).await?;
+
+        // 返却済みの貸出情報を取得
+        let mut checkout_histories: Vec<Checkout> = sqlx::query_as!(
+            ReturnedCheckoutRow,
             r#"
                 SELECT
-                    b.book_id AS book_id,
-                    b.title AS title,
-                    b.author AS author,
-                    b.isbn AS isbn,
-                    b.description AS description,
-                    u.user_id AS owned_by,
-                    u.name AS owner_name
+                    rc.checkout_id,
+                    rc.book_id,
+                    rc.user_id,
+                    rc.checked_out_at,
+                    rc.returned_at,
+                    b.title,
+                    b.author,
+                    b.isbn
                 FROM
-                    books AS b
+                    returned_checkouts AS rc
                 INNER JOIN
-                    users AS u
-                USING(user_id)
+                    books AS b
+                USING (book_id)
                 WHERE
-                    b.book_id IN (SELECT * FROM UNNEST($1::uuid[]))
-                ORDER BY b.created_at DESC
+                    rc.book_id = $1
+                ORDER BY
+                    rc.checked_out_at DESC
             "#,
-            &book_ids as _
+            book_id as _
         )
         .fetch_all(self.db.inner_ref())
         .await
-        .map_err(AppError::SpecificOperationError)?;
+        .map_err(AppError::SpecificOperationError)?
+        .into_iter()
+        .map(Checkout::from)
+        .collect()
 
-        let items = rows.into_iter().map(Book::from).collect();
-
-        Ok(PaginatedList {
-            total,
-            limit,
-            offset,
-            items,
-        })
-    }
-
-    async fn find_by_id(&self, book_id: BookId) -> AppResult<Option<Book>> {
-        let row: Option<BookRow> = sqlx::query_as!(
-            BookRow,
-            r#"
-                SELECT
-                    b.book_id AS book_id,
-                    b.title AS title,
-                    b.author AS author,
-                    b.isbn AS isbn,
-                    b.description AS description,
-                    u.user_id AS owned_by,
-                    u.name AS owner_name
-                FROM
-                    books AS b
-                INNER JOIN
-                    users AS u
-                USING (user_id)
-                WHERE b.book_id = $1
-            "#,
-            book_id as _ // query_as!マクロによるコンパイル時の型チェックを無効化
-        )
-        .fetch_optional(self.db.inner_ref())
-        .await
-        .map_err(AppError::SpecificOperationError)?;
-
-        Ok(row.map(Book::from))
-    }
-
-    async fn update(&self, event: UpdateBook) -> AppResult<()> {
-        let res = sqlx::query!(
-            r#"
-                UPDATE books
-                SET
-                    title = $1,
-                    author = $2,
-                    isbn = $3,
-                    description = $4
-                WHERE book_id = $5
-                AND user_id = $6
-            "#,
-            event.title,
-            event.author,
-            event.isbn,
-            event.description,
-            event.book_id as _,
-            event.requested_user as _,
-        )
-        .execute(self.db.inner_ref())
-        .await
-        .map_err(AppError::SpecificOperationError)?;
-
-        if res.rows_affected() < 1 {
-            return Err(AppError::EntityNotFound(
-                "specified book not found".into(),
-            ));
+        // 貸出中である場合は返却済みの履歴の先頭に追加する
+        if let Some(co) = checkout {
+            checkout_histories.insert(0, co);
         }
 
-        Ok(())
-    }
-
-    async fn delete(&self, event: DeleteBook) -> AppResult<()> {
-        let res = sqlx::query!(
-            r#"
-                DELETE FROM books WHERE book_id = $1 AND user_id = $2
-            "#,
-            event.book_id as _,
-            event.requested_user as _
-        )
-        .execute(self.db.inner_ref())
-        .await
-        .map_err(AppError::SpecificOperationError)?;
-
-        if res.rows_affected() < 1 {
-            return Err(AppError::EntityNotFound(
-                "specified book not found".into(),
-            ));
-        }
-
-        Ok(())
+        Ok(checkout_histories)
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::repository::user::UserRepositoryImpl;
-    use kernel::{
-        model::user::event::CreateUser, repository::user::UserRepository,
-    };
-
-    #[sqlx::test]
-    async fn test_register_book(pool: sqlx::PgPool) -> anyhow::Result<()> {
-        sqlx::query!(r#"INSERT INTO roles(name) VALUES ('Admin'), ('User');"#).execute(&pool).await?;
-
-        let user_repo = UserRepositoryImpl::new(ConnectionPool::new(pool.clone()));
-
-        // BookRepostioryImplを初期化
-        let repo = BookRepositoryImpl::new(ConnectionPool::new(pool.clone()));
-
-        let user = user_repo.create(CreateUser {
-            name: "Test User".into(),
-            email: "test@example.com".into(),
-            passoword: "test_password".into(),
-        }).await?;
-
-        // 投入するための蔵書データを作成
-        let book = CreateBook {
-            title: "Test Title".into(),
-            author: "Test Author".into(),
-            isbn: "Test ISBN".into(),
-            description: "Test Description".into(),
-        };
-
-        // 蔵書データを投入すると正常終了することを確認
-        repo.create(book).await?;
-
-        // find_allを実行するためにはBookListOptions型の値が必要なので作る
-        let options = BookListOptions {
-            limit: 20,
-            offset: 0,
-        };
-
-        // 蔵書の一覧を取得すると投入した1件だけ取得できることを確認
-        let res = repo.find_all(options).await?;
-        assert_eq!(res.items.len(), 1);
-
-        // 蔵書の一覧の最初のデータから蔵書IDを取得し、find_by_idメソッドでその蔵書データを取得することができることを確認
-        let book_id = res[0].id;
-        let res = repo.find_by_id(book_id).await?;
-        assert!(res.is_some());
-
-        // 取得した蔵書データがCreateBookで投入した蔵書データと一致することを確認
-        let Book {
-            id,
-            title,
-            author,
-            isbn,
-            description,
-            owner,
-        } = res.unwrap();
-        assert_eq!(id, book_id);
-        assert_eq!(title, "Test Title");
-        assert_eq!(author, "Test Author");
-        assert_eq!(isbn, "Test ISBN");
-        assert_eq!(description, "Test Description");
-        assert_eq!(owner_name, "Test User");
-
-        Ok(())
-    }
+impl CheckoutRepositoryImpl {
+    // create, update_returnedメソッドでのトランザクションを利用するにあたり
+    // トランザクション分離レベルをSERIALIZABLEにするために内部的に使うメソッド
 }

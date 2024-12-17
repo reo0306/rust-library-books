@@ -10,7 +10,7 @@ use sqlx::types::chrono::{DateTime, Utc};
 pub struct CheckoutStateRow {
     pub book_id: BookId,
     pub checkout_id: Option<CheckoutId>,
-    pub user_id: UserId,
+    pub user_id: Option<UserId>,
 }
 
 // 貸出中の一覧を取得する際に使う方

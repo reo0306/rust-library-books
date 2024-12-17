@@ -13,7 +13,7 @@ use kernel::{
 use shared::error::{AppError, AppResult};
 
 use crate::database::{
-    model::checkout::{CheckoutRow, CheckoutStateRow, ReturnedCheckoutRow};
+    model::checkout::{CheckoutRow, CheckoutStateRow, ReturnedCheckoutRow},
     ConnectionPool,
 };
 
@@ -43,7 +43,7 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
                     SELECT
                         b.book_id,
                         c.checkout_id AS "checkout_id?: CheckoutId",
-                        NULL AS "user_id?: UserId",
+                        NULL AS "user_id?: UserId"
                     FROM
                         books AS b
                     LEFT OUTER JOIN
@@ -54,9 +54,9 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
                 "#,
                 event.book_id as _
             )
-            .fetch_optional(&mu *tx)
+            .fetch_optional(&mut *tx)
             .await
-            map_err(AppError::SpecificOperationError)?;
+            .map_err(AppError::SpecificOperationError)?;
 
             match res {
                 // 指定した書籍が存在しない場合
@@ -107,7 +107,7 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
     }
 
     // 返却操作を行う
-    async fn update_returned(&self, options: UpdateReturned) -> AppResult<()> {
+    async fn update_returned(&self, event: UpdateReturned) -> AppResult<()> {
         let mut tx = self.db.begin().await?;
 
         // トランザクション分離レベルをSERIALIZABLEに設定する。
@@ -140,9 +140,9 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
                 "#,
                 event.book_id as _
             )
-            .fetch_optional(&mu *tx)
+            .fetch_optional(&mut *tx)
             .await
-            map_err(AppError::SpecificOperationError)?;
+            .map_err(AppError::SpecificOperationError)?;
 
             match res {
                 // 指定した書籍がそもそも存在しない場合
@@ -155,7 +155,7 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
                 // 指定した書籍が貸出中であり、貸出IDまたは借りたユーザーが異なる場合
                 Some(CheckoutStateRow {
                     checkout_id: Some(c),
-                    user_id: Some(u)
+                    user_id: Some(u),
                     ..
                 }) if (c, u) != (event.checkout_id, event.returned_by) => {
                     return Err(AppError::UnprocessableEntity(format!(
@@ -227,8 +227,8 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
                     c.checkout_id,
                     c.book_id,
                     c.user_id,
-                    c.checked_out_id,
-                    b.titile,
+                    c.checked_out_at,
+                    b.title,
                     b.author,
                     b.isbn
                 FROM
@@ -255,8 +255,8 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
                     c.checkout_id,
                     c.book_id,
                     c.user_id,
-                    c.checked_out_id,
-                    b.titile,
+                    c.checked_out_at,
+                    b.title,
                     b.author,
                     b.isbn
                 FROM
@@ -315,7 +315,7 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
         .map_err(AppError::SpecificOperationError)?
         .into_iter()
         .map(Checkout::from)
-        .collect()
+        .collect();
 
         // 貸出中である場合は返却済みの履歴の先頭に追加する
         if let Some(co) = checkout {
@@ -329,4 +329,43 @@ impl CheckoutRepository for CheckoutRepositoryImpl {
 impl CheckoutRepositoryImpl {
     // create, update_returnedメソッドでのトランザクションを利用するにあたり
     // トランザクション分離レベルをSERIALIZABLEにするために内部的に使うメソッド
+    async fn set_transaction_serializable(&self, tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> AppResult<()> {
+        sqlx::query!("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE")
+            .execute(&mut **tx)
+            .await
+            .map_err(AppError::SpecificOperationError)?;
+
+        Ok(())
+    }
+
+    // find_history_by_book_idで未返却の貸出し情報を取得するために内部的に使うメソッド
+    async fn find_unreturned_by_book_id(&self, book_id: BookId) -> AppResult<Option<Checkout>> {
+        let res = sqlx::query_as!(
+            CheckoutRow,
+            r#"
+                SELECT
+                    c.checkout_id,
+                    c.book_id,
+                    c.user_id,
+                    c.checked_out_at,
+                    b.title,
+                    b.author,
+                    b.isbn
+                FROM
+                    checkouts AS c
+                INNER JOIN
+                    books AS b
+                USING (book_id)
+                WHERE
+                    c.book_id = $1
+            "#,
+            book_id as _
+        )
+        .fetch_optional(self.db.inner_ref())
+        .await
+        .map_err(AppError::SpecificOperationError)?
+        .map(Checkout::from);
+
+        Ok(res)
+    }
 }

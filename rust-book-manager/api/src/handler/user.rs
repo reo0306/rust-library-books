@@ -16,6 +16,7 @@ use crate::{
         UpdateUserRoleRequestWithUserId, UserResponse, UsersResponse,
     },
 };
+use crate::model::checkout::CheckoutsResponse;
 
 /// ユーザーを追加する（Admin only）
 pub async fn register_user(
@@ -111,4 +112,17 @@ pub async fn change_password(
         .await?;
 
     Ok(StatusCode::OK)
+}
+
+// ユーザーが自身の借りている書籍の一覧を取得する
+pub async fn get_checkouts(
+    user: AuthorizedUser,
+    State(registry): State<AppRegistry>,
+) -> AppResult<Json<CheckoutsResponse>> {
+    registry
+        .checkout_repository()
+        .find_unreturned_by_user_id(user.id())
+        .await
+        .map(CheckoutsResponse::from)
+        .map(Json)
 }

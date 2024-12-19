@@ -7,7 +7,7 @@ use adapter::{database::connect_database_with, redis::RedisClient};
 use anyhow::{Context, Error, Result};
 use api::route::{auth, v1};
 use axum::{http::Method, Router};
-use registry::AppRegistry;
+use registry::AppRegistryImpl;
 use shared::{
     config::AppConfig,
     env::{which, Environment},
@@ -62,7 +62,7 @@ async fn bootstrap() -> Result<()> {
     // Redisへの接続を行うクライアントのインスタンスを作成する。
     let kv = Arc::new(RedisClient::new(&app_config.redis)?);
     // 4) AppResitryを生成する
-    let registry = AppRegistry::new(pool, kv, app_config);
+    let registry = Arc::new(AppRegistryImpl::new(pool, kv, app_config));
 
     // 5) build_health_check_routers関数を呼び出す。AppRegistryをRouterに登録しておく
     let app = Router::new()

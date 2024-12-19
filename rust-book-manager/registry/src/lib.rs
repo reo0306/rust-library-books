@@ -22,7 +22,7 @@ use shared::config::AppConfig;
 
 // 1) DIコンテナの役割を果たす構造体を定義する。Cloneはのちほどaxum側で必要になるため
 #[derive(Clone)]
-pub struct AppRegistry {
+pub struct AppRegistryImpl {
     health_check_repository: Arc<dyn HealthCheckRepository>,
     book_repository: Arc<dyn BookRepository>,
     auth_repository: Arc<dyn AuthRepository>,
@@ -30,7 +30,7 @@ pub struct AppRegistry {
     checkout_repository: Arc<dyn CheckoutRepository>,
 }
 
-impl AppRegistry {
+impl AppRegistryImpl {
     pub fn new(pool: ConnectionPool, redis_client: Arc<RedisClient>, app_config: AppConfig) -> Self {
         // 2) 依存解決を行う。関数内で手書きする。
         let health_check_repository = Arc::new(HealthCheckRepositoryImpl::new(pool.clone()));
@@ -47,7 +47,18 @@ impl AppRegistry {
             checkout_repository,
         }
     }
+}
 
+#[mockall::automock]
+pub trait AppRegistryExt {
+    fn health_check_repository(&self) -> Arc<dyn HealthCheckRepository>;
+    fn book_repository(&self) -> Arc<dyn BookRepository>;
+    fn auth_repository(&self) -> Arc<dyn AuthRepository>;
+    fn checkout_repository(&self) -> Arc<dyn CheckoutRepository>;
+    fn user_repository(&self) -> Arc<dyn UserRepository>;
+}
+
+impl AppRegistryExt for AppRegistryImpl {
     // 3) 依存解決したインスタンスを返すメソッドを定義する
     pub fn health_check_repository(&self) -> Arc<dyn HealthCheckRepository> {
         self.health_check_repository.clone()
@@ -69,3 +80,5 @@ impl AppRegistry {
         self.checkout_repository.clone()
     }
 }
+
+pub type AppRegistry = Arc<dyn AppRegistryExt + Send + Sync + 'static'>;

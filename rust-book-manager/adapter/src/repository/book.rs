@@ -256,7 +256,7 @@ mod tests {
         let user = user_repo.create(CreateUser {
             name: "Test User".into(),
             email: "test@example.com".into(),
-            passoword: "test_password".into(),
+            password: "test_password".into(),
         }).await?;
 
         // 投入するための蔵書データを作成
@@ -268,7 +268,7 @@ mod tests {
         };
 
         // 蔵書データを投入すると正常終了することを確認
-        repo.create(book).await?;
+        repo.create(book, user.id).await?;
 
         // find_allを実行するためにはBookListOptions型の値が必要なので作る
         let options = BookListOptions {
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(res.items.len(), 1);
 
         // 蔵書の一覧の最初のデータから蔵書IDを取得し、find_by_idメソッドでその蔵書データを取得することができることを確認
-        let book_id = res[0].id;
+        let book_id = res.items[0].id;
         let res = repo.find_by_id(book_id).await?;
         assert!(res.is_some());
 
@@ -300,7 +300,7 @@ mod tests {
         assert_eq!(author, "Test Author");
         assert_eq!(isbn, "Test ISBN");
         assert_eq!(description, "Test Description");
-        assert_eq!(owner_name, "Test User");
+        assert_eq!(owner.name, "Test User");
 
         Ok(())
     }

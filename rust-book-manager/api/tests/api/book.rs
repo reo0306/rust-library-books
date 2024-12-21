@@ -64,7 +64,7 @@ async fn show_book_list_with_query_200(
     let app: axum::Router = make_router(fixture);
 
     // 4. リクエストを作成・送信し、レスポンスのステータスコードを検証する
-    let req = Request::get(&v1.(pah)).bearer().body(Body::empty())?;
+    let req = Request::get(&v1(path)).bearer().body(Body::empty())?;
     let resp = app.oneshot(req).await?;
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 

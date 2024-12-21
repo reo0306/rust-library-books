@@ -60,25 +60,25 @@ pub trait AppRegistryExt {
 
 impl AppRegistryExt for AppRegistryImpl {
     // 3) 依存解決したインスタンスを返すメソッドを定義する
-    pub fn health_check_repository(&self) -> Arc<dyn HealthCheckRepository> {
+    fn health_check_repository(&self) -> Arc<dyn HealthCheckRepository> {
         self.health_check_repository.clone()
     }
 
-    pub fn book_repository(&self) -> Arc<dyn BookRepository> {
+    fn book_repository(&self) -> Arc<dyn BookRepository> {
         self.book_repository.clone()
     }
 
-    pub fn auth_repository(&self) -> Arc<dyn AuthRepository> {
+    fn auth_repository(&self) -> Arc<dyn AuthRepository> {
         self.auth_repository.clone()
     }
 
-    pub fn user_repository(&self) -> Arc<dyn UserRepository> {
+    fn user_repository(&self) -> Arc<dyn UserRepository> {
         self.user_repository.clone()
     }
 
-    pub fn checkout_repository(&self) -> Arc<dyn CheckoutRepository> {
+    fn checkout_repository(&self) -> Arc<dyn CheckoutRepository> {
         self.checkout_repository.clone()
     }
 }
 
-pub type AppRegistry = Arc<dyn AppRegistryExt + Send + Sync + 'static'>;
+pub type AppRegistry = Arc<dyn AppRegistryExt + Send + Sync + 'static>;

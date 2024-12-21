@@ -14,7 +14,7 @@ use shared::{
 };
 use tokio::net::TcpListener;
 use tower_http::{
-    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
+    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
     LatencyUnit,
     cors::{self, CorsLayer},
 };
@@ -102,12 +102,12 @@ async fn bootstrap() -> Result<()> {
 
 fn cors() -> CorsLayer {
     CorsLayer::new()
-        .allow_headers(cros::Any)
+        .allow_headers(cors::Any)
         .allow_methods([
             Method::GET,
             Method::POST,
             Method::PUT,
             Method::DELETE,
         ])
-        .allow_origin(cros::Any)
+        .allow_origin(cors::Any)
 }

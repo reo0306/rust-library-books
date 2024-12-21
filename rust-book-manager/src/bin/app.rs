@@ -4,7 +4,7 @@ use std::{
 };
 
 use adapter::{database::connect_database_with, redis::RedisClient};
-use anyhow::{Context, Error, Result};
+use anyhow::{Context, Result};
 use api::route::{auth, v1};
 use axum::{http::Method, Router};
 use registry::AppRegistryImpl;
@@ -84,7 +84,7 @@ async fn bootstrap() -> Result<()> {
 
     // 6) サーバーを起動する。起動時と起動失敗時にログを設定する
     let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 8080);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(&addr).await?;
     // println!からAtrracing::info!に変更
     tracing::info!("Listening on {}", addr);
     axum::serve(listener, app)

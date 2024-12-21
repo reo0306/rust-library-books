@@ -4,8 +4,9 @@ use api::route::{auth, v1};
 use axum::{http::request::Builder, Router};
 use kernel::{
     model::{auth::AccessToken, id::UserId, role::Role, user::User},
-    repository::{auth::MockAuthRespository, user::MockUserRepository},
+    repository::{auth::MockAuthRepository, user::MockUserRepository},
 };
+
 use registry::MockAppRegistryExt;
 use rstest::fixture;
 
@@ -28,7 +29,7 @@ pub fn fixture_registory() -> MockAppRegistryExt {
 #[fixture]
 pub fn fixture_auth(mut fixture_registory: MockAppRegistryExt) -> MockAppRegistryExt {
     fixture_registory.expect_auth_repository().returning(|| {
-        let mut mock_auth_repository = MockAuthRespository::new();
+        let mut mock_auth_repository = MockAuthRepository::new();
         mock_auth_repository
             .expect_fetch_user_id_from_token()
             .returning(|_| Ok(Some(UserId::new())));
@@ -69,7 +70,7 @@ pub trait TesRequestExt {
 
 impl TesRequestExt for Builder {
     fn bearer(self) -> Builder {
-        self.header("Authorizattion", "Bearer dummy")
+        self.header("Authorization", "Bearer dummy")
     }
 
     fn application_json(self) -> Builder {
@@ -86,7 +87,7 @@ macro_rules! deserialize_json {
         use tokio_stream::StreamExt;
 
         let mut bytes = Vec::new();
-        let body = $res.into.body();
+        let body = $res.into_body();
         let mut stream = body.into_data_stream();
         while let Ok(Some(chunk)) = stream.try_next().await {
             bytes.extend_from_slice(&chunk[..]);

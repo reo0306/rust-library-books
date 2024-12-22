@@ -239,10 +239,21 @@ impl BookRepositoryImpl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::repository::user::UserRepositoryImpl;
-    use kernel::{
-        model::user::event::CreateUser, repository::user::UserRepository,
+    use crate::repository::{
+        user::UserRepositoryImpl,
+        book::BookRepositoryImpl,
+        checkout::CheckoutRepositoryImpl,
     };
+    use chrono::Utc;
+    use kernel::{
+        model::{
+            checkout::event::{CreateCheckout, UpdateReturned},
+            id::UserId,
+            user::event::CreateUser,
+        },
+        repository::{checkout::CheckoutRepository, user::UserRepository},
+    };
+    use std::str::FromStr;
 
     #[sqlx::test]
     async fn test_register_book(pool: sqlx::PgPool) -> anyhow::Result<()> {
@@ -301,6 +312,31 @@ mod tests {
         assert_eq!(isbn, "Test ISBN");
         assert_eq!(description, "Test Description");
         assert_eq!(owner.name, "Test User");
+
+        Ok(())
+    }
+
+    #[sqlx::test(fixtures("common", "book"))]
+    async fn test_update_book(pool: sqlx::PgPool) -> anyhow::Result<()> {
+        let repo = BookRepositoryImpl::new(ConnectionPool::new(pool.clone()));
+        let book_id = BookId::from_str("9890736e-a4e4-461a-a77d-eac3517ef11b").unwrap();
+        let book = repo.find_by_id(book_id).await?.unwrap();
+
+        const NEW_AUTHOR: &str = "更新後の著者名";
+        assert_ne!(book.author, NEW_AUTHOR);
+
+        let update_book = UpdateBook {
+            book_id: book.id,
+            title: book.title,
+            author: NEW_AUTHOR.into(),
+            isbn: book.isbn,
+            description: book.description,
+            requested_user: UserId::from_str("5b4c96ac-316a-4bee-8e69-cac5eb84ff4c").unwrap(),
+        };
+        repo.update(update_book).await.unwrap();
+
+        let book = repo.find_by_id(book_id).await?.unwrap();
+        assert_eq!(book.author, NEW_AUTHOR);
 
         Ok(())
     }

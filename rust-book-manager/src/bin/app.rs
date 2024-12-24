@@ -23,6 +23,8 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
+use opentelemetry::global;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // ロガーを初期化する関数init_loggerの呼び出しを追加
@@ -49,7 +51,7 @@ fn init_logger() -> Result<()> {
         .with_max_packet_size(8192)
         .install_simple()?;
 
-    let opentelemetry = tracing_opentelemery::layer().with_tracer(tracer);
+    let opentelemetry = tracing_opentelemetry::layer().with_tracer(tracer);
 
     // ログレベルを設定
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| log_level.into());
